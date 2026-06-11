@@ -1,0 +1,68 @@
+The problem: 
+Buyers arrive confused. Too many options, no clear way to figure out which car fits them.
+Your job: 
+Build a web app that takes a buyer from "I don't know what to buy" → "I'm confident about my shortlist."
+That's the whole brief — and it's intentionally vague. The vagueness is the test. They want to see how you scope it, what you build, and what you cut
+
+Solution:
+Build an Agentic chatbot with tools that helps the customer to identify the car that fits them. 
+
+Tech stack:
+Use Next.js (App Router) for both the frontend chat UI and the backend API routes, so the whole app is one full-stack deployable unit on Vercel. TypeScript throughout. The latest Gemini model as the agent LLM, with an embedding model for the vectors. MongoDB Atlas as the database with an Atlas Vector Search index for the RAG tool. This keeps the run/deploy story simple — the app ships as a single Vercel deployment and the evaluator opens the live link.
+
+The chatbot should have access to two tools:
+
+1. Questionnaire :
+
+Description : 
+LLM will use this tool to ask a set of questions to understand the customer's needs, preferences, and budget. This will help narrow down the options and provide personalized recommendations.
+
+implementation : 
+The questionnaire will consist of multiple-choice questions and open-ended questions to gather information about the customer's lifestyle, driving habits, and desired features in a car. LLM will make a questionnaire tool call with the questions as tool args and the tool handler will insert the tool result saying that the questions have been asked and exit from the agent loop marking the conversation as complete. In the frontend if the last message is a questionnaire tool result then display the questionnaire form to the user and once the user submits the form we send a user message with the questions and answers as the message content to the backend and LLM will use this information to generate personalized responses.
+
+2. RAG (Retrieval-Augmented Generation) :
+
+Description : 
+LLM will use this tool to semantic search on the database for car information, including specifications, features, prices, and customer reviews.
+
+implementation : 
+The RAG tool will be called with some search term or phrase related to the customer's preferences or questions about cars.
+In the database each car record contains a generated embedding vector for the car details on which the MongoDB vector search will be performed to retrieve the most relevant car information. The retrieved information will then be used by LLM to generate a response that provides the customer with detailed information about the cars that match their criteria.
+
+Dataset & data layer (Indian market — CarDekho):
+Each car record holds: make, model, variant, price (in ₹ lakh), body type, fuel type, transmission, mileage (kmpl), safety rating, a list of key features, and one or two short user-review snippets. Alongside these fields each record stores an embedding vector generated from a text summary of all of the above; this embedding is what the RAG vector search runs against.
+The data is populated through a CRUD page (not a seed script). The app exposes a simple admin/dataset page where a user can create, view, edit and delete car entries. On create/edit, the backend builds the text summary, generates the embedding for it, and writes the record + embedding into MongoDB in one step — so any newly added car is immediately searchable by the RAG tool. Seed a handful of cars through this flow so the chatbot has data to retrieve.
+The MongoDB Atlas Vector Search index is defined on the embedding field; its numDimensions must match the Gemini embedding model output (e.g. text-embedding-004 → 768 dims) and use cosine similarity.
+
+Conversation history:
+The agent works over the full conversation history — the running array of user / assistant / tool messages is passed into the agent loop on every turn so the LLM has the complete context (including the last questionnaire tool result). Keep it as a plain message array; it does not need to be tied to a user account or auth.
+
+The end goal / final artifact:
+The conversation must converge on a confident shortlist, not an open-ended chat. After the questionnaire is answered and RAG has retrieved matching cars, the LLM should produce a short, ranked shortlist (3-5 cars) where each car comes with a one-line reason grounded in the retrieved data and the customer's stated needs — e.g. "recommended because: 5-star safety, fits your ₹X budget, best-in-class mileage for your highway commute". The buyer should leave with this shortlist, which is the whole point of "I'm confident about my shortlist".
+
+Failure / edge-case handling (the agent must fail soft, never crash or hallucinate):
+- If RAG returns no matches or weak matches, the LLM should say so plainly and ask one clarifying question (or widen the search) instead of inventing cars that aren't in the database.
+- The LLM must only recommend cars that actually appear in the retrieved RAG results — no hallucinated makes/models/specs.
+- If a tool is called with malformed or missing args, the tool handler should return a clear error result that the LLM can read and recover from, rather than throwing and breaking the agent loop.
+- The agent loop must have a max-iteration cap so it can never loop forever on repeated tool calls.
+
+System prompt structure (the agent's brain — write the system prompt along these lines):
+- Role: a friendly, no-nonsense car-buying advisor for CarDekho. You help confused buyers in the Indian market go from "I don't know what to buy" to a confident shortlist.
+- Goal: end every advisory conversation with a ranked shortlist of 3-5 real cars, each with a clear reason.
+- Intended flow:
+  1. If you don't yet know the buyer's needs (budget, family size / usage, city vs highway, fuel preference, must-have features), call the questionnaire tool first to gather them — ask the few questions that actually change the recommendation, not a long survey.
+  2. Once you have their answers, call the RAG tool with focused search phrases built from their needs (you may call it more than once for different angles, e.g. "safe family SUV under 15 lakh", "high mileage petrol hatchback").
+  3. Recommend only cars that appear in the retrieved results, then converge on the ranked shortlist with one grounded reason per car.
+- Tool-use rules: prefer the questionnaire before recommending when needs are unclear; never invent cars or specs not present in RAG results; if results are weak, say so and ask one clarifying question.
+- Tone: concise, plain language, one focused ask at a time — don't overwhelm an already-confused buyer.
+
+Repo scaffolding (the GitHub deliverable, even though a live link is provided):
+Include a README (what was built, why, what was cut, tech stack, 4-more-hours) and a .env.example listing the required keys — Gemini API key, MongoDB Atlas connection URI, and the Atlas vector index name — so the repo is runnable and the config is self-documenting.
+
+Test suite (keep it fast and focused, not ceremonial):
+Add a small set of unit tests on the pure logic that's most likely to break, with external calls (Gemini, MongoDB) mocked so the suite runs offline in seconds. Cover the things that matter:
+- The agent loop: dispatches the right tool for a given tool call, stops at the max-iteration cap, and the questionnaire tool exits the loop and returns control.
+- Tool-arg validation / fail-soft: malformed or missing tool args produce a clean error result instead of throwing.
+- The embedding text-summary builder: a car record maps to the expected summary string the embedding is generated from.
+- RAG result handling: empty / weak results produce the "no good match, ask a clarifying question" path rather than a hallucinated car.
+Use the framework that ships cleanly with the stack (Vitest). Keep it to the handful of tests above — enough to show the core logic is correct, not exhaustive coverage.
