@@ -1,0 +1,127 @@
+/* ============================================================
+   CarDekho Advisor — design tokens & primitives
+   Recreated from the Claude Design handoff (CarDekho Advisor.dc.html).
+   Aesthetic: warm paper background, emerald primary with a saffron
+   accent (an Indian-market nod), Bricolage Grotesque + Hanken Grotesque.
+   ============================================================ */
+
+:root {
+  /* surfaces */
+  --paper: #f6f4ef;
+  --card: #ffffff;
+  --card-warm: #fcfbf9;
+
+  /* brand */
+  --emerald: #0e5c46;
+  --emerald-2: #16785c;
+  --emerald-grad: linear-gradient(150deg, #0e5c46, #16785c);
+  --mint: #3bb273;
+  --mint-soft: #e7f1ec;
+  --mint-soft-2: #e1efe9;
+
+  /* accent (saffron) */
+  --saffron: #e8852b;
+  --saffron-soft: #fbebd8;
+
+  /* ink */
+  --ink: #14171c;
+  --ink-2: #22262c;
+  --ink-3: #3a3f47;
+  --muted: #5a6068;
+  --muted-2: #8a857b;
+  --muted-3: #9a958b;
+  --faint: #b8b2a6;
+
+  /* lines */
+  --line: #e7e3da;
+  --line-2: #eae6dd;
+  --line-3: #e2ddd3;
+  --disabled: #e4e0d7;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Hanken Grotesque", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: #cde6dc;
+}
+
+.font-display {
+  font-family: "Bricolage Grotesque", "Hanken Grotesque", system-ui, sans-serif;
+}
+
+/* ---- motion ---- */
+@keyframes cdFade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes cdDot {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+@keyframes cdPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(14, 92, 70, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(14, 92, 70, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(14, 92, 70, 0);
+  }
+}
+@keyframes cdSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes cdGrow {
+  from {
+    width: 0;
+  }
+}
+
+/* ---- scrollbar ---- */
+.cd-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.cd-scroll::-webkit-scrollbar-thumb {
+  background: #ddd8ce;
+  border-radius: 99px;
+  border: 3px solid var(--paper);
+}
+
+/* placeholders keep the warm muted tone */
+::placeholder {
+  color: #b0aa9e;
+  opacity: 1;
+}
