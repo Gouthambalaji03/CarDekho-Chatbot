@@ -1,8 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { QUESTIONS } from "@/lib/data";
-import type { QA } from "@/lib/types";
+import type { QuestionnaireQuestion } from "@/lib/types";
 
 const baseChip: CSSProperties = {
   padding: "9px 14px",
@@ -22,6 +21,8 @@ const selChip: CSSProperties = {
   background: "#E7F1EC",
   color: "#0E5C46",
 };
+
+export type Answers = Record<string, string | string[]>;
 
 const AvatarD = () => (
   <div
@@ -45,30 +46,42 @@ const AvatarD = () => (
   </div>
 );
 
-export function qaReady(qa: QA): boolean {
-  return !!qa.budget && qa.usage.length > 0 && !!qa.fuel;
+/** Every question must have an answer (single → a value, multi → ≥1). */
+export function answersReady(questions: QuestionnaireQuestion[], a: Answers): boolean {
+  return questions.every((q) => {
+    const v = a[q.id];
+    return q.multi ? Array.isArray(v) && v.length > 0 : typeof v === "string" && v.length > 0;
+  });
 }
 
 export default function Questionnaire({
-  qa,
+  intro,
+  questions,
+  answers,
+  notes,
   submitted,
   onSelect,
   onNotes,
   onSubmit,
 }: {
-  qa: QA;
+  intro: string;
+  questions: QuestionnaireQuestion[];
+  answers: Answers;
+  notes: string;
   submitted: boolean;
-  onSelect: (qid: keyof Omit<QA, "notes">, value: string, multi: boolean) => void;
+  onSelect: (q: QuestionnaireQuestion, value: string) => void;
   onNotes: (v: string) => void;
   onSubmit: () => void;
 }) {
-  const ready = qaReady(qa);
+  const ready = answersReady(questions, answers);
   const submitDisabled = !ready || submitted;
 
-  const need: string[] = [];
-  if (!qa.budget) need.push("budget");
-  if (qa.usage.length === 0) need.push("use");
-  if (!qa.fuel) need.push("fuel");
+  const need = questions
+    .filter((q) => {
+      const v = answers[q.id];
+      return q.multi ? !(Array.isArray(v) && v.length) : !v;
+    })
+    .map((q) => q.title.toLowerCase());
   const progressText = submitted
     ? "Sent ✓"
     : ready
@@ -89,14 +102,7 @@ export default function Questionnaire({
   };
 
   return (
-    <div
-      style={{
-        display: "flex",
-        gap: 11,
-        alignItems: "flex-start",
-        animation: "cdFade .4s ease both",
-      }}
-    >
+    <div style={{ display: "flex", gap: 11, alignItems: "flex-start", animation: "cdFade .4s ease both" }}>
       <AvatarD />
       <div
         style={{
@@ -108,7 +114,6 @@ export default function Questionnaire({
           overflow: "hidden",
         }}
       >
-        {/* tool header */}
         <div
           style={{
             display: "flex",
@@ -133,9 +138,7 @@ export default function Questionnaire({
           >
             Tool · Questionnaire
           </span>
-          <span style={{ fontSize: 13, color: "#5A6068", fontWeight: 500 }}>
-            Just the few things that change my answer
-          </span>
+          <span style={{ fontSize: 13, color: "#5A6068", fontWeight: 500 }}>{intro}</span>
         </div>
 
         <div style={{ padding: 20 }}>
@@ -169,37 +172,26 @@ export default function Questionnaire({
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
-              {QUESTIONS.map((q) => (
+              {questions.map((q) => (
                 <div key={q.id}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "baseline",
-                      gap: 8,
-                      marginBottom: 11,
-                    }}
-                  >
-                    <span
-                      className="font-display"
-                      style={{ fontWeight: 700, fontSize: 15, color: "#14171C" }}
-                    >
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 11 }}>
+                    <span className="font-display" style={{ fontWeight: 700, fontSize: 15, color: "#14171C" }}>
                       {q.title}
                     </span>
                     {q.hint && (
-                      <span style={{ fontSize: 12, color: "#9A958B", fontWeight: 500 }}>
-                        {q.hint}
-                      </span>
+                      <span style={{ fontSize: 12, color: "#9A958B", fontWeight: 500 }}>{q.hint}</span>
                     )}
                   </div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 9 }}>
                     {q.options.map((o) => {
+                      const v = answers[q.id];
                       const selected = q.multi
-                        ? (qa[q.id] as string[]).includes(o.value)
-                        : qa[q.id] === o.value;
+                        ? Array.isArray(v) && v.includes(o.value)
+                        : v === o.value;
                       return (
                         <button
                           key={o.value}
-                          onClick={() => onSelect(q.id, o.value, q.multi)}
+                          onClick={() => onSelect(q, o.value)}
                           style={selected ? selChip : baseChip}
                         >
                           {o.label}
@@ -211,17 +203,12 @@ export default function Questionnaire({
               ))}
 
               <div>
-                <div
-                  className="font-display"
-                  style={{ fontWeight: 700, fontSize: 15, marginBottom: 9 }}
-                >
+                <div className="font-display" style={{ fontWeight: 700, fontSize: 15, marginBottom: 9 }}>
                   Anything else I should know?{" "}
-                  <span style={{ fontSize: 12, color: "#9A958B", fontWeight: 500 }}>
-                    optional
-                  </span>
+                  <span style={{ fontSize: 12, color: "#9A958B", fontWeight: 500 }}>optional</span>
                 </div>
                 <textarea
-                  value={qa.notes}
+                  value={notes}
                   onChange={(e) => onNotes(e.target.value)}
                   placeholder="e.g. mostly weekend trips with two kids, prefer something easy to park…"
                   rows={2}

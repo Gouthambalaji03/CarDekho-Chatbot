@@ -8,34 +8,41 @@ import {
   type CSSProperties,
   type KeyboardEvent,
 } from "react";
-import { SHORTLIST, SUGGESTIONS } from "@/lib/data";
-import type { Message, QA } from "@/lib/types";
-import Questionnaire from "./Questionnaire";
+import { SUGGESTIONS } from "@/lib/data";
+import { postChat } from "@/lib/client";
+import type {
+  ChatMessage,
+  QuestionnaireQuestion,
+  RagCar,
+  ShortlistCar,
+} from "@/lib/types";
+import Questionnaire, { answersReady, type Answers } from "./Questionnaire";
 import Shortlist from "./Shortlist";
-
-type Phase = "welcome" | "thinking" | "asked" | "results";
-
-const emptyQA: QA = {
-  budget: "",
-  usage: [],
-  seating: "",
-  fuel: "",
-  priorities: [],
-  notes: "",
-};
 
 const GREETING =
   "Hi, I’m Dia — your car-buying advisor. Tell me a bit about what you need and I’ll narrow 200+ cars down to a shortlist you can actually decide between.\n\nWhat are you shopping for?";
 
-/* ---- small presentational helpers ---- */
+const FOLLOW_UP_TEXT: Record<"compare" | "tighter" | "diesel", string> = {
+  compare: "Compare your top two picks for me.",
+  tighter: "Can you be stricter and keep everything under ₹14 lakh?",
+  diesel: "What would change if I considered diesel too?",
+};
 
-const AvatarD = ({ size = 30 }: { size?: number }) => (
+type UIMessage =
+  | { id: number; kind: "user" | "agent"; text: string }
+  | { id: number; kind: "questionnaire"; intro: string; questions: QuestionnaireQuestion[] }
+  | { id: number; kind: "searching"; text: string; done: boolean }
+  | { id: number; kind: "shortlist"; text: string; cars: ShortlistCar[] };
+
+/* ---- presentational helpers ---- */
+
+const AvatarD = () => (
   <div
     className="font-display"
     style={{
       flex: "none",
-      width: size,
-      height: size,
+      width: 30,
+      height: 30,
       borderRadius: 9,
       background: "linear-gradient(150deg,#0E5C46,#16785C)",
       display: "flex",
@@ -51,7 +58,7 @@ const AvatarD = ({ size = 30 }: { size?: number }) => (
   </div>
 );
 
-function UserBubble({ text }: { text?: string }) {
+function UserBubble({ text }: { text: string }) {
   return (
     <div style={{ display: "flex", justifyContent: "flex-end", animation: "cdFade .35s ease both" }}>
       <div
@@ -73,7 +80,7 @@ function UserBubble({ text }: { text?: string }) {
   );
 }
 
-function AgentBubble({ text }: { text?: string }) {
+function AgentBubble({ text }: { text: string }) {
   return (
     <div style={{ display: "flex", gap: 11, alignItems: "flex-start", animation: "cdFade .35s ease both" }}>
       <AvatarD />
@@ -97,7 +104,7 @@ function AgentBubble({ text }: { text?: string }) {
   );
 }
 
-function SearchingPill({ m }: { m: Message }) {
+function SearchingPill({ text, done }: { text: string; done: boolean }) {
   return (
     <div style={{ display: "flex", gap: 11, alignItems: "flex-start", animation: "cdFade .35s ease both" }}>
       <AvatarD />
@@ -112,7 +119,7 @@ function SearchingPill({ m }: { m: Message }) {
           borderRadius: "4px 14px 14px 14px",
         }}
       >
-        {m.active && (
+        {!done && (
           <span
             style={{
               width: 16,
@@ -125,7 +132,7 @@ function SearchingPill({ m }: { m: Message }) {
             }}
           />
         )}
-        {m.done && (
+        {done && (
           <span
             style={{
               width: 18,
@@ -143,7 +150,7 @@ function SearchingPill({ m }: { m: Message }) {
             ✓
           </span>
         )}
-        <span style={{ fontSize: 14, color: "#3A3F47", fontWeight: 500 }}>{m.text}</span>
+        <span style={{ fontSize: 14, color: "#3A3F47", fontWeight: 500 }}>{text}</span>
         <span
           style={{
             fontSize: 11,
@@ -197,13 +204,7 @@ function TypingDots() {
         {[0, 0.15, 0.3].map((d, i) => (
           <span
             key={i}
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: 99,
-              background: "#9A958B",
-              animation: `cdDot 1.2s infinite ${d}s`,
-            }}
+            style={{ width: 7, height: 7, borderRadius: 99, background: "#9A958B", animation: `cdDot 1.2s infinite ${d}s` }}
           />
         ))}
       </div>
@@ -211,78 +212,113 @@ function TypingDots() {
   );
 }
 
+/** Map RAG-retrieved cars to the shortlist card view. Reasons stay grounded. */
+function toShortlistCars(cars: RagCar[]): ShortlistCar[] {
+  return cars.map((c, i) => ({
+    make: c.make,
+    model: c.model,
+    variant: c.variant,
+    price: c.price,
+    mileage: c.mileage,
+    fuel: c.fuel,
+    safety: c.safety,
+    rank: i + 1,
+    match: Math.round(c.score * 100),
+    reason:
+      c.review ||
+      `${c.safety}★ safety, ₹${c.price}L${c.fuel ? `, ${c.fuel}` : ""}, ${c.mileage} kmpl.`,
+  }));
+}
+
 /* ---- main ---- */
 
 export default function Advisor({ fresh = false }: { fresh?: boolean }) {
   const idc = useRef(1);
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
-  const [phase, setPhase] = useState<Phase>("welcome");
+  const greeting = fresh ? "Fresh start! What are you shopping for?" : GREETING;
+
+  const [started, setStarted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [input, setInput] = useState("");
-  const [qa, setQa] = useState<QA>(emptyQA);
-  const [qSubmitted, setQSubmitted] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([
-    { id: 0, kind: "agent", text: fresh ? "Fresh start! What are you shopping for?" : GREETING },
+  const [messages, setMessages] = useState<UIMessage[]>([
+    { id: 0, kind: "agent", text: greeting },
   ]);
+  // The conversation sent to the backend (text turns only).
+  const convo = useRef<ChatMessage[]>([{ role: "assistant", content: greeting }]);
+
+  // Active questionnaire answer state (one at a time).
+  const [qAnswers, setQAnswers] = useState<Answers>({});
+  const [qNotes, setQNotes] = useState("");
+  const [qSubmitted, setQSubmitted] = useState(false);
+  const [qActive, setQActive] = useState<QuestionnaireQuestion[] | null>(null);
 
   const nextId = () => idc.current++;
-  const after = useCallback((ms: number, fn: () => void) => {
-    const t = setTimeout(fn, ms);
-    timers.current.push(t);
-  }, []);
 
-  useEffect(() => {
-    return () => timers.current.forEach(clearTimeout);
-  }, []);
-
-  // keep the conversation pinned to the latest message
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, busy]);
 
-  /* ---- chat ---- */
-  const startFlow = useCallback(
-    (text: string) => {
-      setMessages((m) => [...m, { id: nextId(), kind: "user", text }]);
-      setBusy(true);
-      setPhase("thinking");
-      after(900, () => {
-        setBusy(false);
-        setPhase("asked");
-        setMessages((m) => [
-          ...m,
-          {
-            id: nextId(),
-            kind: "agent",
-            text: "Happy to help you get this right. A few quick questions so I only point you at cars that actually fit — then I’ll pull a shortlist.",
-          },
-          { id: nextId(), kind: "questionnaire" },
-        ]);
-      });
+  const pushUI = (m: UIMessage) => setMessages((prev) => [...prev, m]);
+
+  const handleResult = useCallback(
+    (result: Awaited<ReturnType<typeof postChat>>) => {
+      if (result.type === "questionnaire") {
+        // Record the ask as an assistant turn so the model knows it asked.
+        convo.current.push({ role: "assistant", content: result.intro });
+        setQActive(result.questions);
+        setQAnswers({});
+        setQNotes("");
+        setQSubmitted(false);
+        pushUI({
+          id: nextId(),
+          kind: "questionnaire",
+          intro: result.intro,
+          questions: result.questions,
+        });
+        return;
+      }
+      // message
+      convo.current.push({ role: "assistant", content: result.content });
+      if (result.cars && result.cars.length > 0) {
+        pushUI({
+          id: nextId(),
+          kind: "searching",
+          done: true,
+          text: `Searched the catalogue · ${result.cars.length} strong ${
+            result.cars.length === 1 ? "match" : "matches"
+          }`,
+        });
+        pushUI({
+          id: nextId(),
+          kind: "shortlist",
+          text: result.content,
+          cars: toShortlistCars(result.cars),
+        });
+      } else {
+        pushUI({ id: nextId(), kind: "agent", text: result.content });
+      }
     },
-    [after]
+    []
   );
 
-  const freeReply = useCallback(
-    (text: string) => {
-      setMessages((m) => [...m, { id: nextId(), kind: "user", text }]);
+  const send = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed || busy) return;
+      setStarted(true);
+      pushUI({ id: nextId(), kind: "user", text: trimmed });
+      convo.current.push({ role: "user", content: trimmed });
       setBusy(true);
-      after(800, () => {
+      try {
+        const result = await postChat(convo.current);
+        handleResult(result);
+      } finally {
         setBusy(false);
-        setMessages((m) => [
-          ...m,
-          {
-            id: nextId(),
-            kind: "agent",
-            text: "Good point — I’ll factor that in. Want me to re-run the search with that priority weighted higher?",
-          },
-        ]);
-      });
+      }
     },
-    [after]
+    [busy, handleResult]
   );
 
   const handleSend = useCallback(() => {
@@ -290,9 +326,8 @@ export default function Advisor({ fresh = false }: { fresh?: boolean }) {
     if (!text || busy) return;
     setInput("");
     if (taRef.current) taRef.current.style.height = "auto";
-    if (phase === "welcome") startFlow(text);
-    else freeReply(text);
-  }, [input, busy, phase, startFlow, freeReply]);
+    void send(text);
+  }, [input, busy, send]);
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -302,77 +337,46 @@ export default function Advisor({ fresh = false }: { fresh?: boolean }) {
   };
 
   /* ---- questionnaire ---- */
-  const selectOpt = (qid: keyof Omit<QA, "notes">, value: string, multi: boolean) => {
-    setQa((prev) => {
-      if (multi) {
-        const arr = (prev[qid] as string[]).slice();
+  const selectOpt = (q: QuestionnaireQuestion, value: string) => {
+    setQAnswers((prev) => {
+      if (q.multi) {
+        const arr = Array.isArray(prev[q.id]) ? [...(prev[q.id] as string[])] : [];
         const i = arr.indexOf(value);
         if (i >= 0) arr.splice(i, 1);
         else arr.push(value);
-        return { ...prev, [qid]: arr };
+        return { ...prev, [q.id]: arr };
       }
-      return { ...prev, [qid]: prev[qid] === value ? "" : value };
+      return { ...prev, [q.id]: prev[q.id] === value ? "" : value };
     });
   };
 
-  const submitQ = useCallback(() => {
-    if (qSubmitted) return;
-    const q = qa;
-    if (!q.budget || q.usage.length === 0 || !q.fuel) return;
-    const parts = [
-      "Budget: " + q.budget,
-      "Use: " + q.usage.join(", "),
-      q.seating ? "Seats: " + q.seating : null,
-      "Fuel: " + q.fuel,
-      q.priorities.length ? "Priorities: " + q.priorities.join(", ") : null,
-      q.notes ? "Notes: " + q.notes : null,
-    ].filter(Boolean) as string[];
-    const summary = "Here’s what I’m after:\n" + parts.map((p) => "• " + p).join("\n");
+  const submitQuestionnaire = useCallback(async () => {
+    if (!qActive || qSubmitted || !answersReady(qActive, qAnswers) || busy) return;
+    const lines = qActive.map((q) => {
+      const v = qAnswers[q.id];
+      const labelFor = (val: string) =>
+        q.options.find((o) => o.value === val)?.label ?? val;
+      const ans = q.multi
+        ? (v as string[]).map(labelFor).join(", ")
+        : labelFor(v as string);
+      return `${q.title}: ${ans}`;
+    });
+    if (qNotes.trim()) lines.push(`Notes: ${qNotes.trim()}`);
+    const summary = "Here’s what I’m after:\n" + lines.map((l) => "• " + l).join("\n");
 
-    const searchId = nextId();
     setQSubmitted(true);
-    setMessages((m) => [
-      ...m,
-      { id: nextId(), kind: "user", text: summary },
-      {
-        id: searchId,
-        kind: "searching",
-        active: true,
-        done: false,
-        text: "Searching the catalogue for safe, family-friendly cars under ₹15L…",
-      },
-    ]);
+    pushUI({ id: nextId(), kind: "user", text: summary });
+    convo.current.push({ role: "user", content: summary });
+    setBusy(true);
+    try {
+      const result = await postChat(convo.current);
+      handleResult(result);
+    } finally {
+      setBusy(false);
+    }
+  }, [qActive, qSubmitted, qAnswers, qNotes, busy, handleResult]);
 
-    after(1700, () => {
-      setMessages((m) =>
-        m.map((msg) =>
-          msg.id === searchId
-            ? { ...msg, active: false, done: true, text: "Searched the catalogue · 4 strong matches" }
-            : msg
-        )
-      );
-      after(550, () => {
-        setPhase("results");
-        setMessages((m) => [
-          ...m,
-          {
-            id: nextId(),
-            kind: "shortlist",
-            text: "Here’s your shortlist — four cars that genuinely fit, ranked. Each reason is pulled from what I retrieved, not guessed:",
-            cars: SHORTLIST,
-          },
-        ]);
-      });
-    });
-  }, [qa, qSubmitted, after]);
-
-  const onFollow = (kind: "compare" | "tighter" | "diesel") => {
-    if (kind === "compare") freeReply("Compare the Tata Nexon and Hyundai Creta for me.");
-    else if (kind === "tighter") freeReply("Can you be stricter and keep everything under ₹14 lakh?");
-    else freeReply("What would change if I considered diesel too?");
-  };
-
-  /* ---- composer styles ---- */
+  /* ---- composer ---- */
   const canSend = input.trim().length > 0 && !busy;
   const sendStyle: CSSProperties = {
     flex: "none",
@@ -458,14 +462,7 @@ export default function Advisor({ fresh = false }: { fresh?: boolean }) {
         <div
           ref={scrollRef}
           className="cd-scroll"
-          style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            gap: 18,
-            padding: "8px 4px",
-            overflowY: "auto",
-          }}
+          style={{ flex: 1, display: "flex", flexDirection: "column", gap: 18, padding: "8px 4px", overflowY: "auto" }}
         >
           {messages.map((m) => {
             switch (m.kind) {
@@ -477,18 +474,26 @@ export default function Advisor({ fresh = false }: { fresh?: boolean }) {
                 return (
                   <Questionnaire
                     key={m.id}
-                    qa={qa}
-                    submitted={qSubmitted}
+                    intro={m.intro}
+                    questions={m.questions}
+                    answers={qActive === m.questions ? qAnswers : {}}
+                    notes={qActive === m.questions ? qNotes : ""}
+                    submitted={qActive === m.questions ? qSubmitted : true}
                     onSelect={selectOpt}
-                    onNotes={(v) => setQa((p) => ({ ...p, notes: v }))}
-                    onSubmit={submitQ}
+                    onNotes={setQNotes}
+                    onSubmit={submitQuestionnaire}
                   />
                 );
               case "searching":
-                return <SearchingPill key={m.id} m={m} />;
+                return <SearchingPill key={m.id} text={m.text} done={m.done} />;
               case "shortlist":
                 return (
-                  <Shortlist key={m.id} text={m.text} cars={m.cars ?? []} onFollow={onFollow} />
+                  <Shortlist
+                    key={m.id}
+                    text={m.text}
+                    cars={m.cars}
+                    onFollow={(kind) => send(FOLLOW_UP_TEXT[kind])}
+                  />
                 );
               default:
                 return null;
@@ -498,7 +503,7 @@ export default function Advisor({ fresh = false }: { fresh?: boolean }) {
           {busy && <TypingDots />}
 
           {/* welcome suggestions */}
-          {phase === "welcome" && (
+          {!started && (
             <div
               style={{
                 display: "flex",
@@ -511,9 +516,7 @@ export default function Advisor({ fresh = false }: { fresh?: boolean }) {
               {SUGGESTIONS.map((s) => (
                 <button
                   key={s.label}
-                  onClick={() => {
-                    if (phase === "welcome" && !busy) startFlow(s.text);
-                  }}
+                  onClick={() => !busy && send(s.text)}
                   style={{
                     background: "#fff",
                     border: "1px solid #E2DDD3",

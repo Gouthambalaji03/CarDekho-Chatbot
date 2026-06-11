@@ -1,10 +1,15 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "CarDekho Advisor — Dia",
   description:
     "An agentic car-buying advisor for the Indian market. Tell Dia what you need and get a grounded, ranked shortlist of real cars — nothing invented.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({

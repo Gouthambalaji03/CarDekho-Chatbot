@@ -1,13 +1,23 @@
 "use client";
 
-import { useRef, useState, type CSSProperties } from "react";
-import type {
-  BodyType,
-  Car,
-  CarForm,
-  FuelType,
-  Transmission,
-} from "@/lib/types";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { createCarApi, getCars } from "@/lib/client";
+import { SEED } from "@/lib/data";
+import type { BodyType, CarForm, FuelType, Transmission } from "@/lib/types";
+
+/** Just the fields the catalogue UI renders — satisfied by both seed + API rows. */
+interface CatalogCar {
+  id: string;
+  make: string;
+  model: string;
+  variant: string;
+  price: number;
+  body: BodyType;
+  fuel: FuelType;
+  mileage: number;
+  safety: number;
+  features: string[];
+}
 
 const labelStyle: CSSProperties = {
   display: "block",
@@ -42,27 +52,15 @@ const emptyForm: CarForm = {
   review: "",
 };
 
-function CarTile({ car }: { car: Car }) {
+function CarTile({ car, justAdded }: { car: CatalogCar; justAdded: boolean }) {
   const name = car.make + " " + car.model;
   const initials = (car.make[0] + car.model[0]).toUpperCase();
   const tags = [car.body, car.fuel, car.mileage + " kmpl", car.safety + "★"].concat(
     (car.features || []).slice(0, 1)
   );
-  const cardStyle: CSSProperties = car.justAdded
-    ? {
-        background: "#F1F8F4",
-        border: "1.5px solid #9FCFB8",
-        borderRadius: 14,
-        padding: 15,
-        transition: "all .3s",
-      }
-    : {
-        background: "#fff",
-        border: "1px solid #EAE6DD",
-        borderRadius: 14,
-        padding: 15,
-        boxShadow: "0 1px 3px rgba(20,23,28,.03)",
-      };
+  const cardStyle: CSSProperties = justAdded
+    ? { background: "#F1F8F4", border: "1.5px solid #9FCFB8", borderRadius: 14, padding: 15, transition: "all .3s" }
+    : { background: "#fff", border: "1px solid #EAE6DD", borderRadius: 14, padding: 15, boxShadow: "0 1px 3px rgba(20,23,28,.03)" };
 
   return (
     <div style={cardStyle}>
@@ -87,10 +85,7 @@ function CarTile({ car }: { car: Car }) {
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
-            <span
-              className="font-display"
-              style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-.01em" }}
-            >
+            <span className="font-display" style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-.01em" }}>
               {name}
             </span>
             <span style={{ marginLeft: "auto", fontWeight: 700, fontSize: 14, color: "#0E5C46" }}>
@@ -130,28 +125,11 @@ function CarTile({ car }: { car: Car }) {
           borderTop: "1px solid #F0EDE5",
         }}
       >
-        <span
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: 99,
-            background: "#3BB273",
-            display: "inline-block",
-          }}
-        />
-        <span
-          style={{
-            fontSize: 11.5,
-            fontWeight: 600,
-            color: car.justAdded ? "#0E5C46" : "#8A857B",
-          }}
-        >
-          {car.justAdded ? "Just embedded · searchable now" : "Embedded"}
+        <span style={{ width: 7, height: 7, borderRadius: 99, background: "#3BB273", display: "inline-block" }} />
+        <span style={{ fontSize: 11.5, fontWeight: 600, color: justAdded ? "#0E5C46" : "#8A857B" }}>
+          {justAdded ? "Just embedded · searchable now" : "Embedded"}
         </span>
-        <span
-          className="font-display"
-          style={{ marginLeft: "auto", fontSize: 11, color: "#B8B2A6" }}
-        >
+        <span className="font-display" style={{ marginLeft: "auto", fontSize: 11, color: "#B8B2A6" }}>
           768-dim
         </span>
       </div>
@@ -159,49 +137,79 @@ function CarTile({ car }: { car: Car }) {
   );
 }
 
-export default function Dataset({
-  cars,
-  setCars,
-}: {
-  cars: Car[];
-  setCars: React.Dispatch<React.SetStateAction<Car[]>>;
-}) {
-  const idc = useRef(1);
+export default function Dataset() {
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [cars, setCars] = useState<CatalogCar[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [degraded, setDegraded] = useState(false); // backend unreachable → sample data
   const [f, setF] = useState<CarForm>(emptyForm);
   const [addedFlash, setAddedFlash] = useState(false);
+  const [justAddedId, setJustAddedId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getCars()
+      .then((rows) => {
+        if (cancelled) return;
+        setCars(rows);
+        setDegraded(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCars(SEED.map(({ justAdded, ...c }) => c));
+        setDegraded(true);
+      })
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const set =
     <K extends keyof CarForm>(field: K) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
       setF((prev) => ({ ...prev, [field]: e.target.value as CarForm[K] }));
 
-  const addReady = f.make.trim() !== "" && f.model.trim() !== "" && f.price.trim() !== "";
+  const addReady = f.make.trim() !== "" && f.model.trim() !== "" && f.price.trim() !== "" && !adding;
 
-  const addCar = () => {
+  const addCar = async () => {
     if (!addReady) return;
-    const car: Car = {
-      id: "new-" + idc.current++,
-      make: f.make.trim(),
-      model: f.model.trim(),
-      variant: f.variant.trim() || "—",
-      price: parseFloat(f.price) || 0,
-      body: f.body as BodyType,
-      fuel: f.fuel as FuelType,
-      mileage: parseFloat(f.mileage) || 0,
-      safety: parseInt(f.safety, 10) || 0,
-      features: f.features
-        .split(",")
-        .map((x) => x.trim())
-        .filter(Boolean)
-        .slice(0, 4),
-      justAdded: true,
-    };
-    setCars((prev) => [car, ...prev.map((c) => ({ ...c, justAdded: false }))]);
+    setAdding(true);
+    setFormError(null);
+    const res = await createCarApi({
+      make: f.make,
+      model: f.model,
+      variant: f.variant,
+      price: f.price,
+      mileage: f.mileage,
+      body: f.body,
+      fuel: f.fuel,
+      transmission: f.transmission,
+      safety: f.safety,
+      features: f.features,
+      review: f.review,
+    });
+    setAdding(false);
+
+    if (!res.ok) {
+      setFormError(res.error);
+      return;
+    }
+    const c = res.car;
+    setCars((prev) => [
+      { id: c.id, make: c.make, model: c.model, variant: c.variant, price: c.price, body: c.body, fuel: c.fuel, mileage: c.mileage, safety: c.safety, features: c.features },
+      ...prev,
+    ]);
+    setJustAddedId(c.id);
     setF(emptyForm);
     setAddedFlash(true);
     if (flashTimer.current) clearTimeout(flashTimer.current);
-    flashTimer.current = setTimeout(() => setAddedFlash(false), 2600);
+    flashTimer.current = setTimeout(() => {
+      setAddedFlash(false);
+      setJustAddedId(null);
+    }, 2600);
   };
 
   const addStyle: CSSProperties = {
@@ -223,15 +231,7 @@ export default function Dataset({
   const transOptions: Transmission[] = ["Manual", "Automatic"];
 
   return (
-    <main
-      style={{
-        flex: 1,
-        width: "100%",
-        maxWidth: 1120,
-        margin: "0 auto",
-        padding: "26px 24px 60px",
-      }}
-    >
+    <main style={{ flex: 1, width: "100%", maxWidth: 1120, margin: "0 auto", padding: "26px 24px 60px" }}>
       {/* header */}
       <div
         style={{
@@ -244,21 +244,10 @@ export default function Dataset({
         }}
       >
         <div>
-          <h1
-            className="font-display"
-            style={{ fontWeight: 800, fontSize: 30, letterSpacing: "-.02em", margin: 0 }}
-          >
+          <h1 className="font-display" style={{ fontWeight: 800, fontSize: 30, letterSpacing: "-.02em", margin: 0 }}>
             Dataset
           </h1>
-          <p
-            style={{
-              margin: "6px 0 0",
-              color: "#5A6068",
-              fontSize: 14.5,
-              maxWidth: 520,
-              lineHeight: 1.5,
-            }}
-          >
+          <p style={{ margin: "6px 0 0", color: "#5A6068", fontSize: 14.5, maxWidth: 520, lineHeight: 1.5 }}>
             Every car you add is summarised, embedded with{" "}
             <span style={{ fontWeight: 600, color: "#22262C" }}>text-embedding-004</span>, and is
             instantly searchable by the advisor. One create path — no duplicated embedding logic.
@@ -275,10 +264,7 @@ export default function Dataset({
             padding: "10px 15px",
           }}
         >
-          <span
-            className="font-display"
-            style={{ fontWeight: 800, fontSize: 22, color: "#0E5C46" }}
-          >
+          <span className="font-display" style={{ fontWeight: 800, fontSize: 22, color: "#0E5C46" }}>
             {cars.length}
           </span>
           <span style={{ fontSize: 13, color: "#5A6068", fontWeight: 500, lineHeight: 1.2 }}>
@@ -289,15 +275,24 @@ export default function Dataset({
         </div>
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "380px 1fr",
-          gap: 22,
-          marginTop: 22,
-          alignItems: "start",
-        }}
-      >
+      {degraded && (
+        <div
+          style={{
+            margin: "10px 0 0",
+            padding: "10px 14px",
+            background: "#FBEBD8",
+            border: "1px solid #F3D6AE",
+            borderRadius: 10,
+            fontSize: 13,
+            color: "#8A5A1E",
+          }}
+        >
+          Showing sample data — the backend isn’t reachable. Set <strong>GEMINI_API_KEY</strong> and{" "}
+          <strong>MONGODB_URI</strong> in <code>.env.local</code>, run <code>npm run seed</code>, then reload for live data.
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "380px 1fr", gap: 22, marginTop: 22, alignItems: "start" }}>
         {/* create form */}
         <div
           style={{
@@ -380,33 +375,25 @@ export default function Dataset({
             </div>
             <div>
               <label style={labelStyle}>
-                Key features{" "}
-                <span style={{ color: "#B8B2A6", fontWeight: 500 }}>comma-separated</span>
+                Key features <span style={{ color: "#B8B2A6", fontWeight: 500 }}>comma-separated</span>
               </label>
-              <input
-                value={f.features}
-                onChange={set("features")}
-                placeholder="6 airbags, Sunroof, 360 camera"
-                style={inputStyle}
-              />
+              <input value={f.features} onChange={set("features")} placeholder="6 airbags, Sunroof, 360 camera" style={inputStyle} />
             </div>
             <div>
               <label style={labelStyle}>Review snippet</label>
-              <input
-                value={f.review}
-                onChange={set("review")}
-                placeholder="Feels rock solid on the highway."
-                style={inputStyle}
-              />
+              <input value={f.review} onChange={set("review")} placeholder="Feels rock solid on the highway." style={inputStyle} />
             </div>
 
             <button onClick={addCar} disabled={!addReady} style={addStyle}>
-              + Embed &amp; add to dataset
+              {adding ? "Embedding…" : "+ Embed & add to dataset"}
             </button>
             {addedFlash && (
               <div style={{ fontSize: 12.5, color: "#9A958B", textAlign: "center" }}>
                 ✓ Summary built → embedded → written to MongoDB
               </div>
+            )}
+            {formError && (
+              <div style={{ fontSize: 12.5, color: "#B4452F", textAlign: "center" }}>{formError}</div>
             )}
           </div>
         </div>
@@ -419,11 +406,19 @@ export default function Dataset({
             </span>
             <span style={{ flex: 1, height: 1, background: "#E7E3DA" }} />
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12 }}>
-            {cars.map((car) => (
-              <CarTile key={car.id} car={car} />
-            ))}
-          </div>
+          {loading ? (
+            <div style={{ color: "#9A958B", fontSize: 14, padding: "8px 2px" }}>Loading the catalogue…</div>
+          ) : cars.length === 0 ? (
+            <div style={{ color: "#9A958B", fontSize: 14, padding: "8px 2px" }}>
+              No cars yet — add one on the left, or run <code>npm run seed</code>.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12 }}>
+              {cars.map((car) => (
+                <CarTile key={car.id} car={car} justAdded={car.id === justAddedId} />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </main>

@@ -1,31 +1,16 @@
 "use client";
 
 import type { CSSProperties } from "react";
+import { BP, useMediaQuery } from "@/lib/useMediaQuery";
 
 type Tab = "advisor" | "admin";
 
-const tabOn: CSSProperties = {
-  padding: "7px 16px",
+const tabBase: CSSProperties = {
   borderRadius: 8,
   border: "none",
   cursor: "pointer",
   fontFamily: "inherit",
-  fontWeight: 700,
-  fontSize: 13.5,
-  background: "#fff",
-  color: "#0E5C46",
-  boxShadow: "0 1px 3px rgba(20,23,28,.1)",
-};
-const tabOff: CSSProperties = {
-  padding: "7px 16px",
-  borderRadius: 8,
-  border: "none",
-  cursor: "pointer",
-  fontFamily: "inherit",
-  fontWeight: 600,
-  fontSize: 13.5,
-  background: "transparent",
-  color: "#6A6F77",
+  whiteSpace: "nowrap",
 };
 
 export default function TopBar({
@@ -37,6 +22,26 @@ export default function TopBar({
   onTab: (t: Tab) => void;
   onRestart: () => void;
 }) {
+  const compact = useMediaQuery(BP.compactBar);
+
+  const tabOn: CSSProperties = {
+    ...tabBase,
+    padding: compact ? "6px 12px" : "7px 16px",
+    fontWeight: 700,
+    fontSize: 13.5,
+    background: "#fff",
+    color: "#0E5C46",
+    boxShadow: "0 1px 3px rgba(20,23,28,.1)",
+  };
+  const tabOff: CSSProperties = {
+    ...tabBase,
+    padding: compact ? "6px 12px" : "7px 16px",
+    fontWeight: 600,
+    fontSize: 13.5,
+    background: "transparent",
+    color: "#6A6F77",
+  };
+
   return (
     <header
       style={{
@@ -53,11 +58,11 @@ export default function TopBar({
         style={{
           maxWidth: 1120,
           margin: "0 auto",
-          padding: "0 24px",
+          padding: compact ? "0 14px" : "0 24px",
           height: 64,
           display: "flex",
           alignItems: "center",
-          gap: 18,
+          gap: compact ? 10 : 18,
         }}
       >
         {/* brand */}
@@ -76,6 +81,7 @@ export default function TopBar({
               fontWeight: 800,
               fontSize: 18,
               boxShadow: "0 2px 8px rgba(14,92,70,.28)",
+              flex: "none",
             }}
           >
             C
@@ -87,20 +93,23 @@ export default function TopBar({
             >
               CarDekho
             </span>
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: ".08em",
-                textTransform: "uppercase",
-                color: "#E8852B",
-                background: "#FBEBD8",
-                padding: "3px 7px",
-                borderRadius: 6,
-              }}
-            >
-              Advisor
-            </span>
+            {/* badge eats horizontal space — hide it on narrow screens */}
+            {!compact && (
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: ".08em",
+                  textTransform: "uppercase",
+                  color: "#E8852B",
+                  background: "#FBEBD8",
+                  padding: "3px 7px",
+                  borderRadius: 6,
+                }}
+              >
+                Advisor
+              </span>
+            )}
           </div>
         </div>
 
@@ -112,7 +121,8 @@ export default function TopBar({
             background: "#EDEAE2",
             padding: 4,
             borderRadius: 11,
-            marginLeft: 8,
+            marginLeft: compact ? 0 : 8,
+            flex: "none",
           }}
         >
           <button onClick={() => onTab("advisor")} style={tab === "advisor" ? tabOn : tabOff}>
@@ -124,28 +134,40 @@ export default function TopBar({
         </nav>
 
         {/* right cluster */}
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 14 }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 7,
-              fontSize: 13,
-              color: "#5A6068",
-              fontWeight: 500,
-            }}
-          >
-            <span
+        <div
+          style={{
+            marginLeft: "auto",
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            minWidth: 0,
+          }}
+        >
+          {/* status text is the first thing to drop on small screens */}
+          {!compact && (
+            <div
               style={{
-                width: 8,
-                height: 8,
-                borderRadius: 99,
-                background: "#0E5C46",
-                animation: "cdPulse 2.4s infinite",
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                fontSize: 13,
+                color: "#5A6068",
+                fontWeight: 500,
+                whiteSpace: "nowrap",
               }}
-            />
-            <span>Gemini · grounded</span>
-          </div>
+            >
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 99,
+                  background: "#0E5C46",
+                  animation: "cdPulse 2.4s infinite",
+                }}
+              />
+              <span>Gemini · grounded</span>
+            </div>
+          )}
           <button
             onClick={onRestart}
             style={{
@@ -158,9 +180,11 @@ export default function TopBar({
               fontFamily: "inherit",
               fontWeight: 600,
               fontSize: 13,
-              padding: "8px 13px",
+              padding: compact ? "8px 11px" : "8px 13px",
               borderRadius: 9,
               cursor: "pointer",
+              flex: "none",
+              whiteSpace: "nowrap",
             }}
           >
             Restart
