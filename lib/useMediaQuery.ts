@@ -23,6 +23,8 @@ export function useMediaQuery(query: string): boolean {
 
 /** Shared breakpoints. */
 export const BP = {
+  /** very small phones — drop the wordmark so the header fits */
+  tiny: "(max-width: 400px)",
   /** phones */
   mobile: "(max-width: 600px)",
   /** narrow header — hide secondary chrome */

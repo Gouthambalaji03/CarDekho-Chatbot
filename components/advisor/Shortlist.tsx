@@ -1,6 +1,7 @@
 "use client";
 
 import type { ShortlistCar } from "@/lib/types";
+import { BP, useMediaQuery } from "@/lib/useMediaQuery";
 
 const AvatarD = () => (
   <div
@@ -24,7 +25,7 @@ const AvatarD = () => (
   </div>
 );
 
-function CarCard({ car }: { car: ShortlistCar }) {
+function CarCard({ car, mobile }: { car: ShortlistCar; mobile: boolean }) {
   const name = car.make + " " + car.model;
   const initials = (car.make[0] + car.model[0]).toUpperCase();
   const top = car.rank === 1;
@@ -44,16 +45,19 @@ function CarCard({ car }: { car: ShortlistCar }) {
         borderRadius: 16,
         padding: 16,
         display: "flex",
-        gap: 16,
+        // On phones the fixed-width image would starve the text column — stack
+        // the image (full-width, shorter) above the body instead.
+        flexDirection: mobile ? "column" : "row",
+        gap: mobile ? 12 : 16,
         boxShadow: "0 1px 3px rgba(20,23,28,.04)",
       }}
     >
       {/* rank + photo placeholder */}
-      <div style={{ flex: "none", width: 108 }}>
+      <div style={{ flex: "none", width: mobile ? "100%" : 108 }}>
         <div
           style={{
             position: "relative",
-            height: 74,
+            height: mobile ? 96 : 74,
             borderRadius: 11,
             background: "linear-gradient(135deg,#EEEAE1,#E3DED3)",
             display: "flex",
@@ -222,6 +226,7 @@ export default function Shortlist({
   cars: ShortlistCar[];
   onFollow: (kind: "compare" | "tighter" | "diesel") => void;
 }) {
+  const mobile = useMediaQuery(BP.mobile);
   return (
     <div
       style={{
@@ -251,7 +256,7 @@ export default function Shortlist({
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {cars.map((car) => (
-            <CarCard key={car.rank} car={car} />
+            <CarCard key={car.rank} car={car} mobile={mobile} />
           ))}
         </div>
 

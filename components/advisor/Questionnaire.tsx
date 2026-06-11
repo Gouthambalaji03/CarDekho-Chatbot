@@ -227,7 +227,7 @@ export default function Questionnaire({
                 />
               </div>
 
-              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
                 <button onClick={onSubmit} disabled={submitDisabled} style={submitStyle}>
                   Find my matches →
                 </button>

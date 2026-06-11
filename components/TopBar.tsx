@@ -23,6 +23,7 @@ export default function TopBar({
   onRestart: () => void;
 }) {
   const compact = useMediaQuery(BP.compactBar);
+  const tiny = useMediaQuery(BP.tiny);
 
   const tabOn: CSSProperties = {
     ...tabBase,
@@ -86,6 +87,9 @@ export default function TopBar({
           >
             C
           </div>
+          {/* wordmark eats ~85px — on very small phones keep just the logo so
+              the nav + Restart still fit without horizontal scroll */}
+          {!tiny && (
           <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
             <span
               className="font-display"
@@ -111,6 +115,7 @@ export default function TopBar({
               </span>
             )}
           </div>
+          )}
         </div>
 
         {/* nav */}

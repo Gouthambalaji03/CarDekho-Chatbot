@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createCarApi, getCars } from "@/lib/client";
 import { SEED } from "@/lib/data";
+import { BP, useMediaQuery } from "@/lib/useMediaQuery";
 import type { BodyType, CarForm, FuelType, Transmission } from "@/lib/types";
 
 /** Just the fields the catalogue UI renders — satisfied by both seed + API rows. */
@@ -138,6 +139,9 @@ function CarTile({ car, justAdded }: { car: CatalogCar; justAdded: boolean }) {
 }
 
 export default function Dataset() {
+  // ≤860px: stack the form above the list. ≤600px: list goes single-column.
+  const stack = useMediaQuery(BP.stack);
+  const mobile = useMediaQuery(BP.mobile);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [cars, setCars] = useState<CatalogCar[]>([]);
   const [loading, setLoading] = useState(true);
@@ -231,7 +235,7 @@ export default function Dataset() {
   const transOptions: Transmission[] = ["Manual", "Automatic"];
 
   return (
-    <main style={{ flex: 1, width: "100%", maxWidth: 1120, margin: "0 auto", padding: "26px 24px 60px" }}>
+    <main style={{ flex: 1, width: "100%", maxWidth: 1120, margin: "0 auto", padding: mobile ? "20px 14px 48px" : "26px 24px 60px" }}>
       {/* header */}
       <div
         style={{
@@ -292,7 +296,15 @@ export default function Dataset() {
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "380px 1fr", gap: 22, marginTop: 22, alignItems: "start" }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: stack ? "1fr" : "380px 1fr",
+          gap: 22,
+          marginTop: 22,
+          alignItems: "start",
+        }}
+      >
         {/* create form */}
         <div
           style={{
@@ -300,7 +312,9 @@ export default function Dataset() {
             border: "1px solid #EAE6DD",
             borderRadius: 16,
             padding: 20,
-            position: "sticky",
+            // Only pin the form beside the list on wide screens; once stacked
+            // it sits inline so it doesn't cover the catalogue while scrolling.
+            position: stack ? "static" : "sticky",
             top: 88,
             boxShadow: "0 1px 3px rgba(20,23,28,.04)",
           }}
@@ -413,7 +427,7 @@ export default function Dataset() {
               No cars yet — add one on the left, or run <code>npm run seed</code>.
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "repeat(2,1fr)", gap: 12 }}>
               {cars.map((car) => (
                 <CarTile key={car.id} car={car} justAdded={car.id === justAddedId} />
               ))}

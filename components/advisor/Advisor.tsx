@@ -10,6 +10,7 @@ import {
 } from "react";
 import { SUGGESTIONS } from "@/lib/data";
 import { postChat } from "@/lib/client";
+import { BP, useMediaQuery } from "@/lib/useMediaQuery";
 import type {
   ChatMessage,
   QuestionnaireQuestion,
@@ -233,6 +234,7 @@ function toShortlistCars(cars: RagCar[]): ShortlistCar[] {
 /* ---- main ---- */
 
 export default function Advisor({ fresh = false }: { fresh?: boolean }) {
+  const mobile = useMediaQuery(BP.mobile);
   const idc = useRef(1);
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -402,7 +404,7 @@ export default function Advisor({ fresh = false }: { fresh?: boolean }) {
         width: "100%",
         maxWidth: 1120,
         margin: "0 auto",
-        padding: "0 24px",
+        padding: mobile ? "0 12px" : "0 24px",
         display: "flex",
         justifyContent: "center",
       }}
